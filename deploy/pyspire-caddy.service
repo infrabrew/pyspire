@@ -1,0 +1,61 @@
+# PySpire - static site served by Caddy on port 8081.
+#
+# Caddy adds gzip/zstd compression, cache headers, and security headers that
+# Python's http.server does not. Use this for public or higher-traffic
+# deployments. Requires the `caddy` binary (apt/dnf/pacman packages exist).
+#
+# Install:
+#   sudo apt install caddy          # or: dnf install caddy / pacman -S caddy
+#   sudo mkdir -p /var/www/pyspire /etc/pyspire
+#   sudo cp -r index.html css js /var/www/pyspire/
+#   sudo cp deploy/Caddyfile /etc/pyspire/Caddyfile
+#   sudo cp deploy/pyspire-caddy.service /etc/systemd/system/pyspire.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pyspire.service
+#
+# Verify:
+#   systemctl status pyspire.service
+#   curl -I http://localhost:8081/                       (expect 200 + Cache-Control)
+#   curl -sI -H 'Accept-Encoding: gzip' http://localhost:8081/css/styles.css \
+#     | grep -i content-encoding                         (expect: content-encoding: gzip)
+
+[Unit]
+Description=PySpire static site (Caddy) on port 8081
+Documentation=https://caddyserver.com/docs/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=caddy
+Group=caddy
+ExecStart=/usr/bin/caddy run --config /etc/pyspire/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/pyspire/Caddyfile --adapter caddyfile --force
+Restart=on-failure
+RestartSec=5s
+
+# Caddy needs a writable state/config dir even when not using TLS.
+StateDirectory=caddy
+Environment=XDG_DATA_HOME=/var/lib XDG_CONFIG_HOME=/var/lib
+
+# --- Sandboxing: contain the process if it is ever compromised ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictRealtime=true
+LockPersonality=true
+# The site directory is only ever read by this service.
+ReadOnlyPaths=/var/www/pyspire
+# Port 8081 is unprivileged (>1024), so no CAP_NET_BIND_SERVICE is required.
+# Behind a Cloudflare Tunnel, Caddy binds 127.0.0.1 (see Caddyfile) and
+# cloudflared runs as its own service connecting to http://localhost:8081.
+
+[Install]
+WantedBy=multi-user.target

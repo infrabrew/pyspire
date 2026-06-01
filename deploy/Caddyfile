@@ -1,0 +1,38 @@
+# PySpire - Caddy static site config, port 8081.
+#
+# Bind: 127.0.0.1:8081 -> serve plain HTTP on loopback only. This is the right
+# setting behind a Cloudflare Tunnel (cloudflared connects to localhost) or any
+# reverse proxy: nothing on the LAN or internet can reach Caddy directly.
+#   - Direct LAN exposure instead?  use  :8081
+#   - Want Caddy to do its own HTTPS? replace with your domain (needs port 443
+#     open) -- but DO NOT do this behind a Cloudflare Tunnel; the tunnel
+#     terminates TLS at Cloudflare's edge, so the origin must stay plain HTTP.
+127.0.0.1:8081 {
+	root * /var/www/pyspire
+	file_server
+
+	# Compress text assets. Behind a Cloudflare Tunnel this is largely redundant
+	# (Cloudflare's edge serves Brotli to clients; the cloudflared<->Caddy hop is
+	# loopback), but it is harmless and helps if the tunnel is ever removed.
+	encode zstd gzip
+
+	# Caching. PySpire's asset filenames are STABLE (css/styles.css, js/app.js) -
+	# they do not change on deploy - so "immutable" would pin a stale file for a
+	# month. Use a modest max-age instead; repeat visits are fast, and a deploy
+	# propagates within a day (or instantly if you purge the Cloudflare cache).
+	# If you switch to content-hashed filenames, raise this and add "immutable".
+	@assets path *.css *.js *.woff2 *.woff *.ttf *.svg *.png *.jpg *.jpeg *.ico
+	header @assets Cache-Control "public, max-age=86400"
+	@html path *.html /
+	header @html Cache-Control "no-cache"
+
+	# Security headers. The Content-Security-Policy itself is delivered via a
+	# <meta> tag in index.html; everything here complements it at the edge.
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+}
